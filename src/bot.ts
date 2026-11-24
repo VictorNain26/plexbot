@@ -63,18 +63,17 @@ export class Bot {
     return this.#sessions.get(guildId);
   }
 
-  async endAll(reason: string): Promise<void> {
-    for (const s of this.#sessions.values()) s.save();
-    await Promise.all([...this.#sessions.values()].map((s) => s.end(reason)));
+  /** Saves every session for the restart and keeps them from deleting themselves. */
+  prepareShutdown(): void {
+    for (const s of this.#sessions.values()) s.prepareShutdown();
   }
 
   async handle(i: Interaction): Promise<void> {
-    if (!i.inCachedGuild() || i.guildId !== this.#d.guildId) {
-      if (i.isRepliable())
-        await i.reply({ content: 'Ce bot ne sert que sur son serveur.', flags: MessageFlags.Ephemeral });
-      return;
-    }
     try {
+      if (!i.inCachedGuild() || i.guildId !== this.#d.guildId) {
+        if (i.isRepliable()) throw new UserError('Ce bot ne sert que sur son serveur.');
+        return;
+      }
       if (i.isAutocomplete()) await this.#autocomplete(i);
       else if (i.isChatInputCommand()) await this.#command(i);
       else if (i.isButton()) await this.#button(i);
@@ -86,7 +85,9 @@ export class Bot {
       if (!(err instanceof UserError)) this.#d.log.error({ err, interaction: i.id }, 'interaction failed');
       if (i.isRepliable()) {
         const reply = { content: `⚠️ ${message}`, flags: MessageFlags.Ephemeral } as const;
-        await (i.deferred || i.replied ? i.followUp(reply) : i.reply(reply)).catch(() => undefined);
+        await (
+          i.deferred ? i.editReply(`⚠️ ${message}`) : i.replied ? i.followUp(reply) : i.reply(reply)
+        ).catch(() => undefined);
       }
     }
   }
@@ -108,6 +109,10 @@ export class Bot {
     if (i.commandName === 'play') return this.#play(i);
 
     const s = this.#sessionFor(i.member, i.guild);
+    if (i.commandName !== 'file') {
+      // Discord drops an interaction not answered within 3 s; Plex calls can take longer.
+      await i.deferReply({ flags: MessageFlags.Ephemeral });
+    }
     switch (i.commandName) {
       case 'file':
         await i.reply({
@@ -117,51 +122,48 @@ export class Bot {
         return;
       case 'encours':
         await s.repostCard(this.#textChannel(i));
-        await i.reply({ content: 'Carte remise en bas du salon.', flags: MessageFlags.Ephemeral });
+        await i.editReply('Carte remise en bas du salon.');
         return;
       case 'passer': {
         const to = i.options.getInteger('jusqua');
         if (to === null) await s.skip();
         else await s.skipTo(this.#position(to, s));
-        await i.reply({ content: '⏭️ Suivant.', flags: MessageFlags.Ephemeral });
+        await i.editReply('⏭️ Suivant.');
         return;
       }
       case 'precedent':
         await s.previous();
-        await i.reply({ content: '⏮️ Précédent.', flags: MessageFlags.Ephemeral });
+        await i.editReply('⏮️ Précédent.');
         return;
       case 'pause': {
         const paused = await s.togglePause();
-        await i.reply({
-          content: paused ? '⏸️ En pause.' : '▶️ Reprise.',
-          flags: MessageFlags.Ephemeral,
-        });
+        await i.editReply(paused ? '⏸️ En pause.' : '▶️ Reprise.');
         return;
       }
       case 'stop':
-        await i.reply({ content: '⏹️ Musique arrêtée.', flags: MessageFlags.Ephemeral });
+        await i.editReply('⏹️ Musique arrêtée.');
         await s.end(`Arrêtée par ${i.member.displayName}.`);
         return;
       case 'melanger':
         await s.shuffle();
-        await i.reply({ content: '🔀 File mélangée.', flags: MessageFlags.Ephemeral });
+        await i.editReply('🔀 File mélangée.');
         return;
       case 'boucle': {
         const mode = i.options.getString('mode', true) as LoopMode;
         await s.setLoop(mode);
-        await i.reply({ content: '🔁 Boucle réglée.', flags: MessageFlags.Ephemeral });
+        await i.editReply('🔁 Boucle réglée.');
         return;
       }
       case 'avancer': {
         const ms = parseDuration(i.options.getString('moment', true));
         if (ms === undefined) throw new UserError('Moment illisible : écris par exemple 1:30 ou 90.');
         await s.seek(ms);
-        await i.reply({ content: '⏩ C’est parti.', flags: MessageFlags.Ephemeral });
+        await i.editReply('⏩ C’est parti.');
         return;
       }
       case 'volume':
         await s.setVolume(i.options.getInteger('niveau', true));
-        await i.reply({ content: `🔊 Volume à ${s.volume} %.`, flags: MessageFlags.Ephemeral });
+        await i.editReply(`🔊 Volume à ${s.volume} %.`);
         return;
       case 'retirer': {
         const position = this.#position(i.options.getInteger('position', true), s);
@@ -169,7 +171,7 @@ export class Bot {
         await s.edit((q) => {
           title = q.remove(position).track.title;
         });
-        await i.reply({ content: `🗑️ Retiré : ${title}.`, flags: MessageFlags.Ephemeral });
+        await i.editReply(`🗑️ Retiré : ${title}.`);
         return;
       }
       case 'deplacer': {
@@ -178,14 +180,14 @@ export class Bot {
         await s.edit((q) => {
           q.move(from, to);
         });
-        await i.reply({ content: '↕️ Déplacé.', flags: MessageFlags.Ephemeral });
+        await i.editReply('↕️ Déplacé.');
         return;
       }
       case 'vider':
         await s.edit((q) => {
           q.clearUpcoming();
         });
-        await i.reply({ content: '🧹 File vidée.', flags: MessageFlags.Ephemeral });
+        await i.editReply('🧹 File vidée.');
         return;
       default:
         throw new UserError('Commande inconnue.');

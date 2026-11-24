@@ -71,7 +71,13 @@ export class Store {
     const row = this.#db.prepare('SELECT data FROM sessions WHERE guild_id = ?').get(guildId) as
       { data: string } | undefined;
     if (!row) return undefined;
-    const parsed = savedSchema.safeParse(JSON.parse(row.data));
+    let data: unknown;
+    try {
+      data = JSON.parse(row.data);
+    } catch {
+      data = undefined;
+    }
+    const parsed = savedSchema.safeParse(data);
     if (!parsed.success) {
       this.delete(guildId);
       return undefined;

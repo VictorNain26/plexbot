@@ -49,7 +49,10 @@ async function main(): Promise<void> {
   });
 
   client.once(Events.ClientReady, (c) => {
-    void onReady(c);
+    onReady(c).catch((err: unknown) => {
+      log.fatal({ err: err instanceof Error ? err.message : String(err) }, 'cannot get ready');
+      process.exit(1);
+    });
   });
 
   async function onReady(c: Client<true>): Promise<void> {
@@ -102,7 +105,7 @@ async function main(): Promise<void> {
     stopping = true;
     log.info({ signal }, 'shutting down');
     // Saved first: a restart (update, reboot) resumes the queue where it was.
-    for (const guild of client.guilds.cache.values()) bot.existing(guild.id)?.save();
+    bot.prepareShutdown();
     await client.destroy();
     store.close();
     process.exit(0);

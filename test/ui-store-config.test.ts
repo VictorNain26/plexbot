@@ -1,4 +1,5 @@
 import { mkdtempSync, writeFileSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ButtonStyle, ComponentType, MessageFlags } from 'discord.js';
@@ -172,5 +173,24 @@ describe('loadConfig', () => {
     } catch (err) {
       expect(String(err)).not.toContain('secret');
     }
+  });
+});
+
+describe('Store with a corrupt row', () => {
+  it('drops a row that is not JSON instead of throwing', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'plexbot-bad-'));
+    const store = new Store(dir);
+    store.close();
+    const db = new DatabaseSync(join(dir, 'plexbot.db'));
+    db.prepare('INSERT INTO sessions (guild_id, data, updated_at) VALUES (?, ?, ?)').run(
+      'g',
+      '{"truncated',
+      0,
+    );
+    db.close();
+    const reopened = new Store(dir);
+    expect(reopened.load('g')).toBeUndefined();
+    expect(reopened.load('g')).toBeUndefined();
+    reopened.close();
   });
 });
