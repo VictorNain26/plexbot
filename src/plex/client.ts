@@ -50,6 +50,7 @@ const RETRIES = 2;
 export class PlexClient {
   readonly #o: Required<PlexOptions>;
   #playlists: { at: number; items: Metadata[] } | undefined;
+  #sections: ReadonlySet<number> | undefined;
 
   constructor(options: PlexOptions) {
     this.#o = { fetch: globalThis.fetch.bind(globalThis), timeoutMs: 10_000, ...options };
@@ -66,6 +67,20 @@ export class PlexClient {
       'X-Plex-Platform': 'Discord',
       'X-Plex-Device-Name': 'plexbot',
     };
+  }
+
+  /** From now on, only tracks of these libraries are resolved or streamed. */
+  restrictTo(sectionIds: readonly number[]): void {
+    this.#sections = new Set(sectionIds);
+  }
+
+  /** A music track of an allowed library; anything else (a film, another library) is refused. */
+  #playableTrack(m: Metadata, containerSection?: number): boolean {
+    const section = m.librarySectionID ?? containerSection;
+    return (
+      m.type === 'track' &&
+      (this.#sections === undefined || (section !== undefined && this.#sections.has(section)))
+    );
   }
 
   async musicLibraries(): Promise<Library[]> {
@@ -105,23 +120,30 @@ export class PlexClient {
   async tracks(ref: MediaRef): Promise<Track[]> {
     switch (ref.kind) {
       case 'track':
-        return (await this.#metadata(`/library/metadata/${ref.id}`)).map(toTrack);
+        return (await this.#metadata(`/library/metadata/${ref.id}`))
+          .filter((m) => this.#playableTrack(m))
+          .map(toTrack);
       case 'album': {
         const body = await this.#get(`/library/metadata/${ref.id}/children`, metadataContainerSchema);
-        const library = body.MediaContainer.librarySectionTitle;
-        return body.MediaContainer.Metadata.map((m) =>
-          toTrack({ ...m, librarySectionTitle: m.librarySectionTitle ?? library }),
+        const { librarySectionID, librarySectionTitle } = body.MediaContainer;
+        return body.MediaContainer.Metadata.filter((m) => this.#playableTrack(m, librarySectionID)).map((m) =>
+          toTrack({ ...m, librarySectionTitle: m.librarySectionTitle ?? librarySectionTitle }),
         );
       }
       case 'playlist':
-        return (await this.#paged(`/playlists/${ref.id}/items`)).map(toTrack);
+        // A video playlist holds no track, so nothing of it passes the filter.
+        return (await this.#paged(`/playlists/${ref.id}/items`))
+          .filter((m) => this.#playableTrack(m))
+          .map(toTrack);
     }
   }
 
   async playable(trackId: string): Promise<Playable> {
     const [m] = await this.#metadata(`/library/metadata/${trackId}`);
     const partKey = m?.Media?.[0]?.Part[0]?.key;
-    if (m === undefined || partKey === undefined) throw new PlexError(404, `/library/metadata/${trackId}`);
+    if (m === undefined || partKey === undefined || !this.#playableTrack(m)) {
+      throw new PlexError(404, `/library/metadata/${trackId}`);
+    }
     return {
       url: new URL(partKey, this.#o.baseUrl).href,
       headers: { 'X-Plex-Token': this.#o.token, 'X-Plex-Client-Identifier': this.#o.clientId },

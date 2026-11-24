@@ -208,3 +208,41 @@ describe('PlexClient', () => {
     expect(missing.calls).toHaveLength(1);
   });
 });
+
+describe('library restriction', () => {
+  const movie = {
+    MediaContainer: {
+      Metadata: [
+        {
+          ratingKey: '5',
+          type: 'movie',
+          title: 'Film',
+          librarySectionID: 4,
+          Media: [{ Part: [{ key: '/p' }] }],
+        },
+      ],
+    },
+  };
+
+  it('never resolves or streams something that is not a track of an allowed library', async () => {
+    const { client } = fakePlex({
+      '/library/metadata/5': movie,
+      '/library/metadata/187670': fixture('track'),
+    });
+    client.restrictTo([9]);
+    expect(await client.tracks({ kind: 'track', id: '5' })).toEqual([]);
+    expect(await client.tracks({ kind: 'track', id: '187670' })).toEqual([]);
+    await expect(client.playable('5')).rejects.toBeInstanceOf(PlexError);
+    await expect(client.playable('187670')).rejects.toBeInstanceOf(PlexError);
+  });
+
+  it('accepts album tracks through the album library, and allowed tracks', async () => {
+    const { client } = fakePlex({
+      '/library/metadata/308202/children': fixture('album'),
+      '/library/metadata/187670': fixture('track'),
+    });
+    client.restrictTo([8, 9]);
+    expect(await client.tracks({ kind: 'album', id: '308202' })).toHaveLength(2);
+    expect((await client.playable('187670')).url).toContain('/library/parts/170566/');
+  });
+});

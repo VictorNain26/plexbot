@@ -40,6 +40,7 @@ export const metadataContainerSchema = z.object({
   MediaContainer: z.object({
     totalSize: z.number().optional(),
     // An album's children carry their library only here, on the container.
+    librarySectionID: z.number().optional(),
     librarySectionTitle: z.string().optional(),
     Metadata: z.array(metadataSchema).default([]),
   }),

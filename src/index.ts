@@ -25,12 +25,18 @@ async function main(): Promise<void> {
     version: VERSION,
   });
   const libraries = await plex.musicLibraries();
+  // Only these libraries are played, whatever id an option value carries.
+  plex.restrictTo(libraries.map((l) => l.id));
   log.info({ libraries }, 'Plex music libraries');
 
   const store = new Store(config.dataDir);
   // Only what a music bot needs: guilds (with the bot's own member) and voice states.
   // No privileged intent (members, message content, presences).
-  const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates] });
+  const client = new Client({
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
+    // No message of the bot ever pings: a display name like « @everyone » stays text.
+    allowedMentions: { parse: [] },
+  });
   const bot = new Bot({
     client,
     plex,
