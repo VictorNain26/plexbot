@@ -12,8 +12,13 @@ import {
   Buttons,
   idleCard,
   nowPlayingCard,
+  panelCard,
+  pickerCard,
   QUEUE_PAGE_PREFIX,
   queueCard,
+  SEARCH_MODAL,
+  searchModal,
+  Selects,
 } from '../src/ui/cards.js';
 
 const entry = (n: number): QueueEntry => ({
@@ -35,6 +40,7 @@ const entry = (n: number): QueueEntry => ({
 function flatten(payload: { components: { toJSON(): unknown }[] }) {
   const texts: string[] = [];
   const buttons: { custom_id: string; style: number; disabled?: boolean; label?: string }[] = [];
+  const selects: { custom_id: string; options: { label: string; value: string }[] }[] = [];
   let accent: number | undefined;
   const walk = (c: unknown): void => {
     if (typeof c !== 'object' || c === null) return;
@@ -42,6 +48,7 @@ function flatten(payload: { components: { toJSON(): unknown }[] }) {
     if (o.type === ComponentType.Container) accent = o.accent_color as number;
     if (o.type === ComponentType.TextDisplay) texts.push(o.content as string);
     if (o.type === ComponentType.Button) buttons.push(o as never);
+    if (o.type === ComponentType.StringSelect) selects.push(o as never);
     for (const v of Object.values(o)) {
       if (Array.isArray(v)) v.forEach(walk);
       else walk(v);
@@ -50,7 +57,7 @@ function flatten(payload: { components: { toJSON(): unknown }[] }) {
   payload.components.forEach((c) => {
     walk(c.toJSON());
   });
-  return { text: texts.join('\n'), buttons, accent };
+  return { text: texts.join('\n'), buttons, selects, accent };
 }
 
 describe('now playing card', () => {
@@ -192,5 +199,54 @@ describe('Store with a corrupt row', () => {
     expect(reopened.load('g')).toBeUndefined();
     expect(reopened.load('g')).toBeUndefined();
     reopened.close();
+  });
+});
+
+describe('panel and menus', () => {
+  const base = {
+    entry: entry(0),
+    elapsedMs: 0,
+    paused: false,
+    loop: 'off' as const,
+    volume: 100,
+    upcoming: Array.from({ length: 30 }, (_, i) => entry(i + 1)),
+    hasCover: false,
+    accentColor: undefined,
+  };
+
+  it('offers « Aller à… » with the next 25 entries, by uid', () => {
+    const { selects } = flatten(nowPlayingCard(base));
+    expect(selects).toHaveLength(1);
+    expect(selects[0]?.custom_id).toBe(Selects.jump);
+    expect(selects[0]?.options).toHaveLength(25);
+    expect(selects[0]?.options[0]).toMatchObject({ label: '1. Titre 1', value: 'u1' });
+  });
+
+  it('has no jump menu when nothing comes next', () => {
+    expect(flatten(nowPlayingCard({ ...base, upcoming: [] })).selects).toEqual([]);
+  });
+
+  it('publishes a panel with search, playlists and random', () => {
+    const { buttons, text } = flatten(panelCard());
+    expect(buttons.map((b) => b.custom_id)).toEqual([
+      Buttons.panelSearch,
+      Buttons.panelPlaylists,
+      Buttons.panelRandom,
+    ]);
+    expect(text).toContain('Jukebox');
+  });
+
+  it('opens a search box with one required field', () => {
+    const modal = searchModal().toJSON();
+    expect(modal.custom_id).toBe(SEARCH_MODAL);
+    expect(JSON.stringify(modal)).toContain('"required":true');
+  });
+
+  it('lists choices in a picker, or says nothing was found', () => {
+    const many = Array.from({ length: 30 }, (_, i) => ({ name: `🎵 T${i}`, value: `t:${i}` }));
+    const picker = flatten(pickerCard('Résultats', many));
+    expect(picker.selects[0]?.custom_id).toBe(Selects.pick);
+    expect(picker.selects[0]?.options).toHaveLength(25);
+    expect(flatten(pickerCard('Résultats', [])).text).toContain('Rien trouvé');
   });
 });

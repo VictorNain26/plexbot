@@ -1,6 +1,6 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { ffmpegArgs } from '../src/audio/stream.js';
+import { ffmpegArgs, startFfmpeg } from '../src/audio/stream.js';
 import { escapeMarkdown, formatDuration, parseDuration, progressBar } from '../src/ui/format.js';
 
 describe('durations', () => {
@@ -100,9 +100,48 @@ describe('ffmpegArgs', () => {
     expect(ffmpegArgs({ ...playable, gainDb: undefined }, { volume: 100 })).not.toContain('-af');
   });
 
+  it('starts quiet, reconnects on a dropped stream, and sends every header', () => {
+    const args = ffmpegArgs({ ...playable, headers: { A: '1', B: '2' } });
+    expect(args.slice(0, 10)).toEqual([
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-nostdin',
+      '-reconnect',
+      '1',
+      '-reconnect_streamed',
+      '1',
+      '-reconnect_delay_max',
+      '5',
+    ]);
+    expect(value(args, '-headers')).toBe('A: 1\r\nB: 2\r\n');
+    expect(ffmpegArgs({ ...playable, headers: {} })).not.toContain('-headers');
+  });
+
+  it('reads the original file without video', () => {
+    const args = ffmpegArgs(playable);
+    expect(args[args.indexOf('-i') + 2]).toBe('-vn');
+  });
+
   it('seeks before the input', () => {
     const args = ffmpegArgs(playable, { seekMs: 61_500 });
     expect(args.indexOf('-ss')).toBeLessThan(args.indexOf('-i'));
     expect(value(args, '-ss')).toBe('61.500');
+  });
+});
+
+describe('startFfmpeg', () => {
+  it('runs the binary with the arguments and keeps the end of its error output', async () => {
+    // /bin/sh refuses ffmpeg's first option and says so on stderr: enough to check the plumbing.
+    const { process: child, stderr } = startFfmpeg(
+      { url: 'http://x', headers: {}, gainDb: undefined },
+      {},
+      '/bin/sh',
+    );
+    const code = await new Promise<number | null>((resolve) => child.on('close', resolve));
+    expect(code).not.toBe(0);
+    expect(stderr()).toMatch(/-h|illegal|invalid/i);
+    expect(stderr().length).toBeLessThanOrEqual(2000);
+    expect(stderr()).toBe(stderr().trim());
   });
 });

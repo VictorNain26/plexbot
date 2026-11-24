@@ -246,3 +246,27 @@ describe('library restriction', () => {
     expect((await client.playable('187670')).url).toContain('/library/parts/170566/');
   });
 });
+
+describe('random tracks', () => {
+  it('draws random tracks from every allowed library, interleaved', async () => {
+    const { client, calls } = fakePlex({
+      '/library/sections/8/all': fixture('playlist-items'),
+      '/library/sections/9/all': fixture('album'),
+    });
+    client.restrictTo([8, 9]);
+    const tracks = await client.randomTracks(4);
+    expect(tracks.map((t) => t.library)).toEqual([
+      'Musique',
+      'Musique second wave',
+      'Musique',
+      'Musique second wave',
+    ]);
+    expect(calls.map((c) => c.url.searchParams.get('sort'))).toEqual(['random', 'random']);
+    expect(calls[0]?.url.searchParams.get('type')).toBe('10');
+  });
+
+  it('draws nothing without allowed libraries', async () => {
+    const { client } = fakePlex({});
+    expect(await client.randomTracks(5)).toEqual([]);
+  });
+});

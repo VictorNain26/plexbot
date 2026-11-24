@@ -27,6 +27,9 @@ export function commandDefinitions(libraries: readonly Library[]) {
     play,
     new SlashCommandBuilder().setName('file').setDescription('Affiche la file d’attente'),
     new SlashCommandBuilder()
+      .setName('panneau')
+      .setDescription('Publie le panneau jukebox : chercher, playlists, au hasard, sans taper de commande'),
+    new SlashCommandBuilder()
       .setName('encours')
       .setDescription('Remet la carte « en cours » en bas du salon'),
     new SlashCommandBuilder()

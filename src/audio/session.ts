@@ -240,6 +240,12 @@ export class GuildSession {
     this.save();
   }
 
+  /** Jumps to an upcoming entry by its uid (the « Aller à… » menu); gone entries are ignored. */
+  async jumpTo(uid: string): Promise<void> {
+    const position = this.queue.upcoming.findIndex((e) => e.uid === uid) + 1;
+    if (position > 0) await this.skipTo(position);
+  }
+
   async setLoop(mode: LoopMode): Promise<void> {
     this.queue.loop = mode;
     await this.#refreshCard();

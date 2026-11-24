@@ -151,6 +151,34 @@ export class PlexClient {
     };
   }
 
+  /**
+   * `count` tracks drawn at random from the allowed music libraries, spread over them
+   * (`/library/sections/{id}/all?type=10&sort=random`, checked against the server).
+   */
+  async randomTracks(count: number): Promise<Track[]> {
+    const sections = [...(this.#sections ?? [])];
+    if (sections.length === 0) return [];
+    const per = Math.ceil(count / sections.length);
+    const lists = await Promise.all(
+      sections.map(async (id) => {
+        const body = await this.#get(`/library/sections/${id}/all`, metadataContainerSchema, {
+          type: '10',
+          sort: 'random',
+          'X-Plex-Container-Start': '0',
+          'X-Plex-Container-Size': String(per),
+        });
+        const { librarySectionTitle } = body.MediaContainer;
+        return body.MediaContainer.Metadata.filter((m) => this.#playableTrack(m, id)).map((m) =>
+          toTrack({ ...m, librarySectionTitle: m.librarySectionTitle ?? librarySectionTitle }),
+        );
+      }),
+    );
+    // Interleaved, so the first tracks are not all from one library.
+    const mixed: Track[] = [];
+    for (let i = 0; i < per; i++) for (const list of lists) if (list[i]) mixed.push(list[i] as Track);
+    return mixed.slice(0, count);
+  }
+
   /** A square JPEG of the cover, resized by Plex, for a Discord attachment. */
   async cover(thumb: string, size = 300): Promise<Buffer> {
     const res = await this.#request('/photo/:/transcode', {
