@@ -20,6 +20,22 @@ describe('audio pipeline (real ffmpeg)', () => {
   let seenToken: string | undefined;
   const server = createServer((req, res) => {
     seenToken = req.headers['x-plex-token'] as string | undefined;
+    if (req.url?.includes('slow')) {
+      // A long file sent slowly: still downloading when ffmpeg is killed (a skip).
+      res.writeHead(200, { 'Content-Type': 'audio/flac' });
+      const body = readFileSync(flac);
+      let sent = 0;
+      const timer = setInterval(() => {
+        if (sent >= body.length || res.destroyed) {
+          clearInterval(timer);
+          res.end();
+          return;
+        }
+        res.write(body.subarray(sent, sent + 4096));
+        sent += 4096;
+      }, 50);
+      return;
+    }
     if (req.url?.includes('missing')) {
       res.writeHead(404).end('<html>Not Found</html>');
       return;
@@ -101,5 +117,24 @@ describe('audio pipeline (real ffmpeg)', () => {
     const { packets, stderr } = await packetsOf(0, url.replace('file.flac', 'missing.flac'));
     expect(packets).toHaveLength(0);
     expect(stderr).toContain('download failed: Plex answered 404');
+  });
+
+  it('survives ffmpeg being killed while the download runs (a skip)', async () => {
+    const errors: unknown[] = [];
+    const onError = (e: unknown) => errors.push(e);
+    process.on('uncaughtException', onError);
+    try {
+      const { process: ffmpeg } = startFfmpeg(
+        { url: url.replace('file.flac', 'slow.flac'), headers: {}, gainDb: undefined },
+        {},
+      );
+      ffmpeg.stdout.resume();
+      await new Promise((r) => setTimeout(r, 300));
+      ffmpeg.kill('SIGKILL');
+      await new Promise((r) => setTimeout(r, 500));
+      expect(errors).toEqual([]);
+    } finally {
+      process.off('uncaughtException', onError);
+    }
   });
 });

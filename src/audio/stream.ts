@@ -1,5 +1,6 @@
 import { type ChildProcessByStdio, spawn } from 'node:child_process';
 import { Readable, type Writable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import type { Playable } from '../plex/client.js';
 
@@ -90,10 +91,12 @@ export function startFfmpeg(
   child.on('close', () => {
     download.abort();
   });
+  // pipeline, not pipe: an error on either side (the download aborted on a skip, ffmpeg gone) is
+  // handled here instead of being an unhandled 'error' event, which would end the process.
   fetchFn(p.url, { headers: p.headers, signal: download.signal })
-    .then((res) => {
+    .then(async (res) => {
       if (!res.ok || !res.body) throw new Error(`Plex answered ${res.status} for the audio file`);
-      Readable.fromWeb(res.body as WebReadableStream<Uint8Array>).pipe(child.stdin);
+      await pipeline(Readable.fromWeb(res.body as WebReadableStream<Uint8Array>), child.stdin);
     })
     .catch((e: unknown) => {
       if (!download.signal.aborted) note(`download failed: ${e instanceof Error ? e.message : String(e)}\n`);
