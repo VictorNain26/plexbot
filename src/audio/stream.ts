@@ -1,5 +1,6 @@
 import { type ChildProcessByStdio, spawn } from 'node:child_process';
-import type { Readable } from 'node:stream';
+import { Readable, type Writable } from 'node:stream';
+import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import type { Playable } from '../plex/client.js';
 
 /** Gain applied from Plex's loudness analysis is kept in a sane range. */
@@ -35,27 +36,25 @@ export function volumeFilter(gainDb: number | undefined, volume = 100): string |
 }
 
 /**
- * ffmpeg reads the original file from Plex (no transcoding on Plex's side) and encodes Opus
- * itself, in its own process, into Ogg. @discordjs/voice then only demuxes it (StreamType.OggOpus):
- * the Opus encoding, « one of the most computationally demanding parts of the audio pipeline »
- * (discord.js guide, audio resources), stays off the Node thread that sends a packet every 20 ms.
- * Settings are libopus's for music (ffmpeg-codecs, libopus): audio application, VBR, 20 ms frames.
- * The token goes in a request header: it never appears in the URL, so in no ffmpeg message.
+ * ffmpeg encodes Opus itself, in its own process, into Ogg; @discordjs/voice then only demuxes it
+ * (StreamType.OggOpus): the Opus encoding, « one of the most computationally demanding parts of
+ * the audio pipeline » (discord.js guide, audio resources), stays off the Node thread that sends a
+ * packet every 20 ms. Settings are libopus's for music (ffmpeg-codecs, libopus): audio application,
+ * VBR, 20 ms frames.
+ *
+ * ffmpeg reads the file on its standard input (`pipe:0`): Node fetches it from Plex with the token
+ * in a request header (startFfmpeg). A process's arguments are visible to every user of the host
+ * (`ps`), so neither the token nor the Plex URL is ever one of them. A seek is an output option,
+ * which decodes the pipe up to the position (ffmpeg, -ss).
  */
 export function ffmpegArgs(p: Playable, options: StreamOptions = {}): string[] {
-  const headers = Object.entries(p.headers)
-    .map(([k, v]) => `${k}: ${v}\r\n`)
-    .join('');
   const bitrate = Math.min(
     Math.max(Math.round(options.bitrate ?? DEFAULT_BITRATE), MIN_BITRATE),
     MAX_BITRATE,
   );
-  const args = ['-hide_banner', '-loglevel', 'error', '-nostdin'];
-  args.push('-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5');
-  if (headers) args.push('-headers', headers);
+  const args = ['-hide_banner', '-loglevel', 'error', '-i', 'pipe:0', '-vn'];
   if (options.seekMs !== undefined && options.seekMs > 0)
     args.push('-ss', (options.seekMs / 1000).toFixed(3));
-  args.push('-i', p.url, '-vn');
   const filter = volumeFilter(p.gainDb, options.volume);
   if (filter) args.push('-af', filter);
   args.push('-c:a', 'libopus', '-b:a', String(bitrate), '-vbr', 'on', '-application', 'audio');
@@ -64,19 +63,41 @@ export function ffmpegArgs(p: Playable, options: StreamOptions = {}): string[] {
   return args;
 }
 
-export type Ffmpeg = ChildProcessByStdio<null, Readable, Readable>;
+export type Ffmpeg = ChildProcessByStdio<Writable, Readable, Readable>;
 
-/** Starts ffmpeg; its stderr is collected (bounded) for the error report. */
+/**
+ * Starts ffmpeg and feeds it the Plex file, fetched by Node with its headers. The download stops
+ * with ffmpeg; a failed download ends ffmpeg's input, so the stream ends (and the player moves on).
+ * Its stderr is collected (bounded) for the error report.
+ */
 export function startFfmpeg(
   p: Playable,
   options: StreamOptions = {},
   binary = 'ffmpeg',
+  fetchFn: typeof fetch = globalThis.fetch.bind(globalThis),
 ): { process: Ffmpeg; stderr: () => string } {
-  const child = spawn(binary, ffmpegArgs(p, options), { stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(binary, ffmpegArgs(p, options), { stdio: ['pipe', 'pipe', 'pipe'] });
   let err = '';
+  const note = (text: string) => {
+    err = (err + text).slice(-2000);
+  };
   child.stderr.setEncoding('utf8');
-  child.stderr.on('data', (chunk: string) => {
-    err = (err + chunk).slice(-2000);
+  child.stderr.on('data', note);
+  // ffmpeg may stop reading first (killed on a skip): that is not an error.
+  child.stdin.on('error', () => undefined);
+
+  const download = new AbortController();
+  child.on('close', () => {
+    download.abort();
   });
+  fetchFn(p.url, { headers: p.headers, signal: download.signal })
+    .then((res) => {
+      if (!res.ok || !res.body) throw new Error(`Plex answered ${res.status} for the audio file`);
+      Readable.fromWeb(res.body as WebReadableStream<Uint8Array>).pipe(child.stdin);
+    })
+    .catch((e: unknown) => {
+      if (!download.signal.aborted) note(`download failed: ${e instanceof Error ? e.message : String(e)}\n`);
+      child.stdin.end();
+    });
   return { process: child, stderr: () => err.trim() };
 }

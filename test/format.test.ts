@@ -55,16 +55,21 @@ describe('escapeMarkdown', () => {
 describe('ffmpegArgs', () => {
   const playable = {
     url: 'http://plex:32400/library/parts/1/file.flac',
-    headers: { 'X-Plex-Token': 'tok' },
+    headers: { 'X-Plex-Token': 'tok-secret' },
     gainDb: -10.36,
   };
   const value = (args: string[], flag: string) => args[args.indexOf(flag) + 1];
 
-  it('reads the Plex URL with the token in a header', () => {
-    const args = ffmpegArgs(playable);
-    expect(args).not.toContain('http://plex:32400/library/parts/1/file.flac?X-Plex-Token=tok');
-    expect(value(args, '-headers')).toBe('X-Plex-Token: tok\r\n');
-    expect(args.indexOf('-ss')).toBe(-1);
+  it('never puts the token, nor the Plex URL, in the process arguments: ffmpeg reads stdin', () => {
+    const args = ffmpegArgs(playable, { seekMs: 5_000 });
+    expect(args.join(' ')).not.toContain('tok-secret');
+    expect(args.join(' ')).not.toContain('plex:32400');
+    expect(args).not.toContain('-headers');
+    expect(value(args, '-i')).toBe('pipe:0');
+  });
+
+  it('starts quiet', () => {
+    expect(ffmpegArgs(playable).slice(0, 4)).toEqual(['-hide_banner', '-loglevel', 'error', '-i']);
   });
 
   it('encodes Opus music in ffmpeg, in Ogg, at the given bitrate', () => {
@@ -100,33 +105,12 @@ describe('ffmpegArgs', () => {
     expect(ffmpegArgs({ ...playable, gainDb: undefined }, { volume: 100 })).not.toContain('-af');
   });
 
-  it('starts quiet, reconnects on a dropped stream, and sends every header', () => {
-    const args = ffmpegArgs({ ...playable, headers: { A: '1', B: '2' } });
-    expect(args.slice(0, 10)).toEqual([
-      '-hide_banner',
-      '-loglevel',
-      'error',
-      '-nostdin',
-      '-reconnect',
-      '1',
-      '-reconnect_streamed',
-      '1',
-      '-reconnect_delay_max',
-      '5',
-    ]);
-    expect(value(args, '-headers')).toBe('A: 1\r\nB: 2\r\n');
-    expect(ffmpegArgs({ ...playable, headers: {} })).not.toContain('-headers');
-  });
-
-  it('reads the original file without video', () => {
-    const args = ffmpegArgs(playable);
-    expect(args[args.indexOf('-i') + 2]).toBe('-vn');
-  });
-
-  it('seeks before the input', () => {
+  it('reads without video, and seeks after the input (a pipe is decoded up to the position)', () => {
     const args = ffmpegArgs(playable, { seekMs: 61_500 });
-    expect(args.indexOf('-ss')).toBeLessThan(args.indexOf('-i'));
+    expect(args[args.indexOf('-i') + 2]).toBe('-vn');
+    expect(args.indexOf('-ss')).toBeGreaterThan(args.indexOf('-i'));
     expect(value(args, '-ss')).toBe('61.500');
+    expect(ffmpegArgs(playable).indexOf('-ss')).toBe(-1);
   });
 });
 

@@ -20,6 +20,10 @@ describe('audio pipeline (real ffmpeg)', () => {
   let seenToken: string | undefined;
   const server = createServer((req, res) => {
     seenToken = req.headers['x-plex-token'] as string | undefined;
+    if (req.url?.includes('missing')) {
+      res.writeHead(404).end('<html>Not Found</html>');
+      return;
+    }
     res.writeHead(200, { 'Content-Type': 'audio/flac' });
     res.end(readFileSync(flac));
   });
@@ -65,5 +69,37 @@ describe('audio pipeline (real ffmpeg)', () => {
     expect(packets.length).toBeGreaterThanOrEqual(140);
     expect(packets.length).toBeLessThanOrEqual(160);
     expect(packets.every((p) => p.length > 0 && p.length < 1500)).toBe(true);
+  });
+
+  /** Every packet @discordjs/voice reads from a stream. */
+  async function packetsOf(seekMs: number, file = url) {
+    const { process: ffmpeg, stderr } = startFfmpeg(
+      { url: file, headers: { 'X-Plex-Token': 'secret' }, gainDb: undefined },
+      { seekMs },
+    );
+    const resource = createAudioResource(ffmpeg.stdout, { inputType: StreamType.OggOpus });
+    const packets: Buffer[] = [];
+    await new Promise<void>((resolve) => {
+      resource.playStream.on('readable', () => {
+        let packet: Buffer | null;
+        while ((packet = resource.playStream.read() as Buffer | null) !== null) packets.push(packet);
+      });
+      resource.playStream.on('end', resolve);
+      resource.playStream.on('close', resolve);
+    });
+    return { packets, stderr: stderr() };
+  }
+
+  it('seeks into the piped file', async () => {
+    const { packets } = await packetsOf(1_000);
+    // 2 s left of 3 s: about 100 packets.
+    expect(packets.length).toBeGreaterThanOrEqual(90);
+    expect(packets.length).toBeLessThanOrEqual(110);
+  });
+
+  it('ends the stream and reports it when Plex refuses the file', async () => {
+    const { packets, stderr } = await packetsOf(0, url.replace('file.flac', 'missing.flac'));
+    expect(packets).toHaveLength(0);
+    expect(stderr).toContain('download failed: Plex answered 404');
   });
 });
