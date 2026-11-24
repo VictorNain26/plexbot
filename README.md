@@ -38,6 +38,10 @@ npm run check      # format, lint, types, tests
 npm run mutation   # mutation testing (Stryker), seuil 80 %
 ```
 
+`package.json` force `minimatch` 11.0.9 sous Stryker (`overrides`) : Stryker 10.1.1 tire la 10.2, touchée
+par [GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249). À retirer quand une version
+de Stryker demandera une `minimatch` corrigée.
+
 ## Déployer (victorserv)
 
 Le serveur ne construit rien : la CI publie `ghcr.io/victornain26/plexbot:sha-<commit>` avec une
