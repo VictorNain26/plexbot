@@ -39,7 +39,7 @@ Le serveur ne construit rien : la CI publie `ghcr.io/victornain26/plexbot:sha-<c
 attestation de provenance, et `deploy/deploy.sh` (lancé par `plexbot-deploy.timer`, rôle
 `plexbot` de victorserv) l'installe une fois vérifiée. À côté de `compose.yaml`, hors git :
 
-- `.env` : `DISCORD_GUILD_ID=<id du serveur Discord>` ;
+- `.env` : `DISCORD_GUILD_ID=<id du serveur Discord>`, et `IMAGE_TAG` que `deploy.sh` écrit ;
 - `secrets/discord_token` et `secrets/plex_token` (mode 600) ;
 - `data/` : la base SQLite.
 

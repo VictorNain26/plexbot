@@ -36,8 +36,13 @@ if [ -z "$target" ]; then
   exit 1
 fi
 
-# The tag the bot runs, kept outside git; compose reads it (plexbot.service: --env-file .image.env).
-running_tag=$(sed -n 's/^IMAGE_TAG=//p' .image.env 2>/dev/null || true)
+# The tag the bot runs lives in .env, next to DISCORD_GUILD_ID (outside git): a plain
+# `docker compose up -d` (plexbot.service, a restart by hand) then runs the deployed image.
+running_tag=$(sed -n 's/^IMAGE_TAG=//p' .env)
+set_tag() {
+  sed -i '/^IMAGE_TAG=/d' .env
+  echo "IMAGE_TAG=$1" >>.env
+}
 if [ "$current" = "$target" ] && [ "$running_tag" = "sha-$target" ]; then
   exit 0
 fi
@@ -88,8 +93,8 @@ rollback() {
   git reset --keep "$current"
   if [ -n "$previous_image" ]; then
     docker tag "$previous_image" "$image:rollback"
-    echo "IMAGE_TAG=rollback" >.image.env
-    docker compose --env-file .env --env-file .image.env up -d --wait --wait-timeout "$health_timeout" ||
+    set_tag rollback
+    docker compose up -d --wait --wait-timeout "$health_timeout" ||
       echo "the previous image is not healthy either"
   fi
   exit 1
@@ -97,8 +102,8 @@ rollback() {
 
 echo "deploying ${current:0:8} -> ${target:0:8}"
 git merge --quiet --ff-only "$target"
-echo "IMAGE_TAG=sha-$target" >.image.env
-docker compose --env-file .env --env-file .image.env up -d --wait --wait-timeout "$health_timeout" ||
+set_tag "sha-$target"
+docker compose up -d --wait --wait-timeout "$health_timeout" ||
   rollback "not healthy within ${health_timeout}s"
 git config --unset plexbot.failedTarget || true
 echo "deployed ${target:0:8}"

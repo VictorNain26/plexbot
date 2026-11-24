@@ -1,6 +1,7 @@
 # plexbot on victorserv (~/plexbot). The image is the one CI built from the commit
 # deploy/deploy.sh promotes ($IMAGE_TAG); nothing is built on the server.
-# Files next to it, never committed: .env (DISCORD_GUILD_ID), secrets/ (the two tokens), data/.
+# Files next to it, never committed: .env (DISCORD_GUILD_ID, and IMAGE_TAG written by
+# deploy.sh), secrets/ (the two tokens), data/.
 services:
   plexbot:
     image: ghcr.io/victornain26/plexbot:${IMAGE_TAG:?set by deploy/deploy.sh}
