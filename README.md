@@ -21,7 +21,11 @@ Les boutons de la carte font la même chose. Il faut être dans le salon vocal d
 - discord.js 14 et @discordjs/voice 0.19 (voix chiffrée DAVE, obligatoire depuis mars 2026).
 - Plex : API HTTP (`/hubs/search`, `/playlists`, `/library/metadata`), token en en-tête.
 - Audio : ffmpeg lit le fichier original sur Plex, applique le gain de normalisation que Plex a
-  mesuré, et sort du PCM 48 kHz qu'Opus encode. Volume réglable en direct.
+  mesuré et le volume, et encode lui-même l'Opus (48 kHz stéréo, mode musique, VBR) au débit du
+  salon vocal, plafonné à 128 kb/s. L'encodage se fait hors du processus Node, qui ne fait que
+  relayer les paquets toutes les 20 ms : pas de coupure quand le bot travaille.
+- Sans taper de commande : `/panneau` publie un panneau jukebox (Chercher, Playlists, Au hasard),
+  et la carte « en cours » a un menu « Aller à… » vers les titres à suivre.
 - La file est sauvegardée (SQLite, `node:sqlite`) : un redémarrage reprend où il en était.
 - Lecture signalée à Plex (« Lecture en cours », historique au-delà de 90 %).
 
