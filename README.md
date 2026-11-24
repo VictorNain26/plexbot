@@ -13,6 +13,7 @@ playlists, choix de la bibliothèque, file d'attente partagée et carte « en co
 | `/melanger`, `/boucle`, `/avancer`, `/volume`         | Réglages.                                                                        |
 | `/retirer`, `/deplacer`, `/vider`                     | Édition de la file.                                                              |
 | `/encours`                                            | Remet la carte en bas du salon.                                                  |
+| `/panneau`                                            | Publie le panneau jukebox : 🔍 Chercher, 📜 Playlists, 🎲 Au hasard.             |
 
 Les boutons de la carte font la même chose. Il faut être dans le salon vocal du bot pour le piloter.
 

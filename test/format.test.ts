@@ -1,6 +1,6 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { ffmpegArgs, startFfmpeg } from '../src/audio/stream.js';
+import { ffmpegArgs, MAX_GAIN_DB, MIN_GAIN_DB, startFfmpeg, volumeFilter } from '../src/audio/stream.js';
 import { escapeMarkdown, formatDuration, parseDuration, progressBar } from '../src/ui/format.js';
 
 describe('durations', () => {
@@ -91,7 +91,7 @@ describe('ffmpegArgs', () => {
 
   it('limits peaks only when the total gain is a boost', () => {
     const af = value(ffmpegArgs({ ...playable, gainDb: 4 }, { volume: 100 }), '-af');
-    expect(af).toBe('volume=4.00dB,alimiter=limit=1:level=disabled');
+    expect(af).toBe('volume=4.00dB,alimiter=limit=0.891:level=disabled');
   });
 
   it('mutes at volume 0, clamps the Plex gain, and needs no filter at a neutral setting', () => {
@@ -132,16 +132,42 @@ describe('ffmpegArgs', () => {
 
 describe('startFfmpeg', () => {
   it('runs the binary with the arguments and keeps the end of its error output', async () => {
-    // /bin/sh refuses ffmpeg's first option and says so on stderr: enough to check the plumbing.
+    // Node refuses ffmpeg's first option with a fixed message: enough to check the plumbing.
     const { process: child, stderr } = startFfmpeg(
       { url: 'http://x', headers: {}, gainDb: undefined },
       {},
-      '/bin/sh',
+      process.execPath,
     );
     const code = await new Promise<number | null>((resolve) => child.on('close', resolve));
     expect(code).not.toBe(0);
-    expect(stderr()).toMatch(/-h|illegal|invalid/i);
-    expect(stderr().length).toBeLessThanOrEqual(2000);
+    expect(stderr()).toContain('bad option: -hide_banner');
     expect(stderr()).toBe(stderr().trim());
+  });
+});
+
+describe('volumeFilter properties', () => {
+  it('limits only a boost, mutes at 0, and stays within the clamped gain', () => {
+    fc.assert(
+      fc.property(
+        fc.option(fc.double({ min: -100, max: 100, noNaN: true }), { nil: undefined }),
+        fc.integer({ min: 0, max: 150 }),
+        (gain, volume) => {
+          const f = volumeFilter(gain, volume);
+          if (volume === 0) {
+            expect(f).toBe('volume=0');
+            return;
+          }
+          if (f === undefined) return;
+          const db = Number(/^volume=(-?[0-9.]+)dB/.exec(f)?.[1]);
+          expect(f.includes('alimiter')).toBe(db > 0);
+          expect(db).toBeLessThanOrEqual(MAX_GAIN_DB + 20 * Math.log10(1.5) + 0.01);
+          expect(db).toBeGreaterThanOrEqual(MIN_GAIN_DB + 20 * Math.log10(0.01) - 0.01);
+        },
+      ),
+    );
+  });
+
+  it('keeps true peaks under -1 dBTP on a boost (EBU R128)', () => {
+    expect(volumeFilter(4, 100)).toBe('volume=4.00dB,alimiter=limit=0.891:level=disabled');
   });
 });

@@ -137,6 +137,14 @@ export function nowPlayingCard(v: NowPlayingView) {
   return { components: [container], flags: MessageFlags.IsComponentsV2 as const };
 }
 
+/** A short notice, for a reply that replaces a Components V2 message (a picker). */
+export function noticeCard(text: string) {
+  const container = new ContainerBuilder()
+    .setAccentColor(BRAND_COLOR)
+    .addTextDisplayComponents((t) => t.setContent(text));
+  return { components: [container], flags: MessageFlags.IsComponentsV2 as const };
+}
+
 /** What the card turns into once the queue is over. */
 export function idleCard(reason: string) {
   const container = new ContainerBuilder()
@@ -194,12 +202,14 @@ function jumpMenu(upcoming: readonly QueueEntry[]) {
     .setCustomId(Selects.jump)
     .setPlaceholder('Aller à…')
     .addOptions(
-      upcoming.slice(0, SELECT_MAX).map((e, i) =>
-        new StringSelectMenuOptionBuilder()
+      upcoming.slice(0, SELECT_MAX).map((e, i) => {
+        const option = new StringSelectMenuOptionBuilder()
           .setLabel(truncate(`${i + 1}. ${e.track.title}`, 100))
-          .setDescription(truncate(e.track.artist, 100))
-          .setValue(e.uid),
-      ),
+          .setValue(e.uid);
+        // A description must not be empty (discord.js builders).
+        if (e.track.artist) option.setDescription(truncate(e.track.artist, 100));
+        return option;
+      }),
     );
   return new ActionRowBuilder<ButtonBuilder | StringSelectMenuBuilder>().addComponents(menu);
 }

@@ -174,3 +174,14 @@ describe('mapping edges', () => {
     expect(trackGainDb(track())).toBeUndefined();
   });
 });
+
+describe('review fixes', () => {
+  it('lists each result once, even when Plex returns it twice', () => {
+    const t = track({ ratingKey: '7' });
+    expect(toChoices([t, t, { ...t, title: 'same key' }]).map((c) => c.value)).toEqual(['t:7']);
+  });
+
+  it('names an empty artist « Artiste inconnu »', () => {
+    expect(toTrack(track({ grandparentTitle: '', originalTitle: '' })).artist).toBe('Artiste inconnu');
+  });
+});

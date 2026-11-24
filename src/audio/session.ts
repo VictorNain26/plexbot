@@ -79,6 +79,11 @@ export class GuildSession {
   #shuttingDown = false;
   /** What the users asked for. A pause asked while the stream still buffers applies once it plays. */
   #wantPaused = false;
+  /**
+   * Where the stream restarts once unpaused. A volume change or a seek made while paused waits
+   * here: restarting the stream right away would send its first packets before it is paused again.
+   */
+  #pendingStartMs: number | undefined;
   /** Each #play call takes a number; one that finishes after a newer one is dropped. */
   #playGeneration = 0;
 
@@ -127,6 +132,7 @@ export class GuildSession {
   }
 
   get positionMs(): number {
+    if (this.#pendingStartMs !== undefined) return this.#pendingStartMs;
     return this.#offsetMs + (this.#resource?.playbackDuration ?? 0);
   }
 
@@ -197,7 +203,9 @@ export class GuildSession {
 
   async togglePause(): Promise<boolean> {
     this.#wantPaused = !this.#wantPaused;
+    const pending = this.#pendingStartMs;
     if (this.#wantPaused) this.#player.pause();
+    else if (pending !== undefined) await this.#play(pending, { keepCard: true, keepOnError: true });
     else this.#player.unpause();
     await this.#reportTimeline(this.paused ? 'paused' : 'playing');
     await this.#refreshCard();
@@ -229,15 +237,32 @@ export class GuildSession {
   async seek(ms: number): Promise<void> {
     const current = this.queue.current;
     if (!current) return;
-    await this.#play(Math.min(Math.max(ms, 0), Math.max(current.track.durationMs - 1_000, 0)));
+    const at = Math.min(Math.max(ms, 0), Math.max(current.track.durationMs - 1_000, 0));
+    await this.#restartAt(at);
   }
 
   async setVolume(percent: number): Promise<void> {
     this.#volume = Math.min(Math.max(Math.round(percent), 0), 150);
-    // ffmpeg applies the volume: it restarts at the same position with the new one.
-    if (this.queue.current && this.#resource) await this.#play(this.positionMs, { keepCard: true });
-    else await this.#refreshCard();
+    // ffmpeg applies the volume: the stream restarts at the same position with the new one.
+    if (this.queue.current && (this.#resource || this.#pendingStartMs !== undefined)) {
+      await this.#restartAt(this.positionMs);
+    } else {
+      await this.#refreshCard();
+    }
     this.save();
+  }
+
+  /**
+   * Restarts the current track at `ms` (volume, seek). While paused, it only records where to
+   * restart; a Plex error keeps the current stream rather than skipping the track.
+   */
+  async #restartAt(ms: number): Promise<void> {
+    if (this.#wantPaused) {
+      this.#pendingStartMs = ms;
+      await this.#refreshCard();
+      return;
+    }
+    await this.#play(ms, { keepCard: true, keepOnError: true });
   }
 
   /** Jumps to an upcoming entry by its uid (the « Aller à… » menu); gone entries are ignored. */
@@ -347,7 +372,13 @@ export class GuildSession {
     this.#volume = saved.volume;
     this.#wantPaused = saved.paused;
     await this.join(channel, textChannel);
-    await this.#play(saved.positionMs);
+    if (saved.paused) {
+      // Nothing streams until « reprendre »: the card shows where it will resume.
+      this.#pendingStartMs = saved.positionMs;
+      await this.#sendCard();
+    } else {
+      await this.#play(saved.positionMs);
+    }
   }
 
   async #onIdle(): Promise<void> {
@@ -392,7 +423,7 @@ export class GuildSession {
   }
 
   /** Streams the current entry from `seekMs`, replacing whatever was playing. */
-  async #play(seekMs = 0, options: { keepCard?: boolean } = {}): Promise<void> {
+  async #play(seekMs = 0, options: { keepCard?: boolean; keepOnError?: boolean } = {}): Promise<void> {
     const entry = this.queue.current;
     if (!entry) return this.#playOrFinish();
     const generation = ++this.#playGeneration;
@@ -404,6 +435,13 @@ export class GuildSession {
     } catch (err) {
       if (generation !== this.#playGeneration) return;
       this.#d.log.warn({ err: (err as Error).message, track: entry.track.id }, 'cannot resolve track');
+      if (options.keepOnError === true) {
+        // A volume change or a seek: the track keeps playing as it was.
+        await this.#say(
+          '⚠️ Plex ne répond pas : je garde la lecture telle quelle, réessaie dans un instant.',
+        );
+        return;
+      }
       this.#failures += 1;
       await this.#say(`⚠️ Plex ne trouve plus **${entry.track.title}**. Je passe au suivant.`);
       if (this.#failures >= MAX_CONSECUTIVE_FAILURES) return this.end('Trop de titres illisibles d’affilée.');
@@ -412,7 +450,11 @@ export class GuildSession {
     }
 
     const previous = this.#ffmpeg;
-    const ffmpeg = startFfmpeg(playable, { seekMs, bitrate: this.#bitrate, volume: this.#volume });
+    this.#pendingStartMs = undefined;
+    // Read at each stream: the channel's bitrate can change while the bot plays.
+    const channel = this.voiceChannelId ? this.#d.guild.channels.cache.get(this.voiceChannelId) : undefined;
+    const bitrate = channel?.isVoiceBased() ? channel.bitrate : this.#bitrate;
+    const ffmpeg = startFfmpeg(playable, { seekMs, bitrate, volume: this.#volume });
     this.#ffmpeg = ffmpeg;
     ffmpeg.process.on('error', (err) => {
       this.#d.log.error({ err: err.message }, 'cannot start ffmpeg');

@@ -25,12 +25,13 @@ import {
   SEARCH_FIELD,
   SEARCH_MODAL,
   Selects,
+  noticeCard,
   panelCard,
   pickerCard,
   queueCard,
   searchModal,
 } from './ui/cards.js';
-import { parseDuration } from './ui/format.js';
+import { escapeMarkdown, parseDuration } from './ui/format.js';
 
 export interface BotDeps {
   readonly client: Client;
@@ -110,8 +111,11 @@ export class Bot {
       if (!(err instanceof UserError)) this.#d.log.error({ err, interaction: i.id }, 'interaction failed');
       if (i.isRepliable()) {
         const reply = { content: `⚠️ ${message}`, flags: MessageFlags.Ephemeral } as const;
+        const deferredReply = i.isStringSelectMenu()
+          ? noticeCard(`⚠️ ${message}`)
+          : { content: `⚠️ ${message}` };
         await (
-          i.deferred ? i.editReply(`⚠️ ${message}`) : i.replied ? i.followUp(reply) : i.reply(reply)
+          i.deferred ? i.editReply(deferredReply) : i.replied ? i.followUp(reply) : i.reply(reply)
         ).catch(() => undefined);
       }
     }
@@ -270,11 +274,11 @@ export class Bot {
     const s = this.session(i.guild);
     await s.join(channel, text);
     await s.enqueue(tracks, { id: i.user.id, name: i.member.displayName }, { next: options.next === true });
-    const what = tracks.length === 1 ? `**${tracks[0]?.title ?? ''}**` : `**${tracks.length} titres**`;
-    await i.editReply({
-      content: `✅ ${what} ${options.next === true ? 'jouera ensuite' : 'ajouté à la file'}.`,
-      components: [],
-    });
+    const what =
+      tracks.length === 1 ? `**${escapeMarkdown(tracks[0]?.title ?? '')}**` : `**${tracks.length} titres**`;
+    const message = `✅ ${what} ${options.next === true ? 'jouera ensuite' : 'ajouté à la file'}.`;
+    // A picker is a Components V2 message: it can only be replaced by components, not by text.
+    await i.editReply(i.isStringSelectMenu() ? noticeCard(message) : { content: message });
   }
 
   /** The option value from the autocomplete, or, for typed text, the first search result. */
@@ -373,7 +377,10 @@ export class Bot {
     const query = i.fields.getTextInputValue(SEARCH_FIELD).trim();
     await i.deferReply({ flags: MessageFlags.Ephemeral });
     const choices = toChoices(await this.#d.plex.search(query));
-    await i.editReply({ ...pickerCard(`🔍 « ${query} »`, choices), flags: MessageFlags.IsComponentsV2 });
+    await i.editReply({
+      ...pickerCard(`🔍 « ${escapeMarkdown(query)} »`, choices),
+      flags: MessageFlags.IsComponentsV2,
+    });
   }
 
   /** The session a member may control: the bot plays, and they are in its voice channel. */

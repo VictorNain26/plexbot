@@ -10,6 +10,8 @@ export const MIN_BITRATE = 8_000;
 export const MAX_BITRATE = 128_000;
 /** The bitrate of a default voice channel, used when the channel's is unknown. */
 export const DEFAULT_BITRATE = 64_000;
+/** -1 dBTP as a linear ceiling: 10^(-1/20). */
+export const TRUE_PEAK_LIMIT = 0.891;
 
 export interface StreamOptions {
   readonly seekMs?: number | undefined;
@@ -27,8 +29,9 @@ export function volumeFilter(gainDb: number | undefined, volume = 100): string |
   if (Math.abs(total) < 0.005) return undefined;
   const volumeStep = `volume=${total.toFixed(2)}dB`;
   // `volume` clips what goes over full scale (ffmpeg-filters, volume): only a boost can, so only a
-  // boost gets the lookahead limiter, with its auto level off so it keeps the gain (alimiter).
-  return total > 0 ? `${volumeStep},alimiter=limit=1:level=disabled` : volumeStep;
+  // boost gets the lookahead limiter, its auto level off so it keeps the gain (alimiter). Its ceiling
+  // is -1 dBTP (0.891), the true-peak maximum EBU R128 sets, which leaves the lossy Opus encode room.
+  return total > 0 ? `${volumeStep},alimiter=limit=${TRUE_PEAK_LIMIT}:level=disabled` : volumeStep;
 }
 
 /**
