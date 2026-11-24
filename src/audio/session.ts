@@ -353,6 +353,7 @@ export class GuildSession {
       volume: this.#volume,
       positionMs: this.positionMs,
       paused: this.paused,
+      cardMessageId: this.#card?.id,
     };
   }
 
@@ -371,6 +372,12 @@ export class GuildSession {
     this.queue.replace({ items: saved.items, index: saved.index, loop: saved.loop });
     this.#volume = saved.volume;
     this.#wantPaused = saved.paused;
+    // The card of the previous run still shows its buttons: it goes, a fresh one replaces it.
+    if (saved.cardMessageId) {
+      await textChannel.messages.delete(saved.cardMessageId).catch((err: unknown) => {
+        this.#d.log.debug({ err: (err as Error).message }, 'old card already gone');
+      });
+    }
     await this.join(channel, textChannel);
     if (saved.paused) {
       // Nothing streams until « reprendre »: the card shows where it will resume.

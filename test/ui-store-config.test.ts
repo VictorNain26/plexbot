@@ -143,6 +143,7 @@ describe('Store', () => {
       volume: 70,
       positionMs: 12_000,
       paused: true,
+      cardMessageId: '1234',
     };
     store.save('g', session);
     expect(store.load('g')).toEqual(session);
@@ -248,5 +249,34 @@ describe('panel and menus', () => {
     expect(picker.selects[0]?.custom_id).toBe(Selects.pick);
     expect(picker.selects[0]?.options).toHaveLength(25);
     expect(flatten(pickerCard('Résultats', [])).text).toContain('Rien trouvé');
+  });
+});
+
+describe('Store compatibility', () => {
+  it('reads a session saved before the card id existed', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'plexbot-old-'));
+    const store = new Store(dir);
+    store.close();
+    const db = new DatabaseSync(join(dir, 'plexbot.db'));
+    const old = {
+      voiceChannelId: 'v',
+      textChannelId: 't',
+      items: [],
+      index: 0,
+      loop: 'off',
+      volume: 100,
+      positionMs: 0,
+      paused: false,
+    };
+    db.prepare('INSERT INTO sessions (guild_id, data, updated_at) VALUES (?, ?, ?)').run(
+      'g',
+      JSON.stringify(old),
+      0,
+    );
+    db.close();
+    const reopened = new Store(dir);
+    expect(reopened.load('g')?.cardMessageId).toBeUndefined();
+    expect(reopened.load('g')?.voiceChannelId).toBe('v');
+    reopened.close();
   });
 });
