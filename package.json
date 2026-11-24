@@ -1,0 +1,44 @@
+{
+  "name": "plexbot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Bot Discord qui joue la musique d’un serveur Plex : pistes, albums, playlists.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=24.12"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/src/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "mutation": "stryker run",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm test"
+  },
+  "dependencies": {
+    "@discordjs/opus": "0.11.0",
+    "@discordjs/voice": "0.19.2",
+    "discord.js": "14.28.1",
+    "pino": "10.4.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@stryker-mutator/core": "10.1.1",
+    "@stryker-mutator/vitest-runner": "10.1.1",
+    "@types/node": "24.19.2",
+    "eslint": "10.15.0",
+    "fast-check": "4.11.0",
+    "prettier": "3.9.10",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.74.0",
+    "vitest": "5.1.1"
+  },
+  "allowScripts": {
+    "@discordjs/opus@0.11.0": true
+  }
+}

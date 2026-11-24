@@ -1,0 +1,39 @@
+{
+  "MediaContainer": {
+    "size": 1,
+    "librarySectionID": 8,
+    "librarySectionTitle": "Musique",
+    "Metadata": [
+      {
+        "ratingKey": "187670",
+        "key": "/library/metadata/187670",
+        "type": "track",
+        "title": "Sleeping In",
+        "librarySectionTitle": "Musique",
+        "librarySectionID": 8,
+        "grandparentTitle": "The Postal Service",
+        "parentTitle": "Give Up",
+        "parentYear": 2003,
+        "thumb": "/library/metadata/187667/thumb/1784341892",
+        "parentThumb": "/library/metadata/187667/thumb/1784341892",
+        "duration": 261093,
+        "Media": [
+          {
+            "duration": 261093,
+            "Part": [
+              {
+                "key": "/library/parts/170566/1769175385/file.flac",
+                "duration": 261093,
+                "size": 30002894,
+                "Stream": [
+                  { "streamType": 2, "albumGain": "-10.36", "gain": "-10.36" },
+                  { "key": "/library/streams/258124", "streamType": 4 }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

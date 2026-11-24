@@ -1,0 +1,38 @@
+{
+  "MediaContainer": {
+    "size": 2,
+    "totalSize": 2,
+    "leafCount": 2,
+    "playlistType": "audio",
+    "ratingKey": "324581",
+    "title": "L'amoureuse",
+    "Metadata": [
+      {
+        "ratingKey": "187670",
+        "key": "/library/metadata/187670",
+        "type": "track",
+        "title": "Sleeping In",
+        "librarySectionTitle": "Musique",
+        "librarySectionID": 8,
+        "grandparentTitle": "The Postal Service",
+        "parentTitle": "Give Up",
+        "parentYear": 2003,
+        "parentThumb": "/library/metadata/187667/thumb/1784341892",
+        "duration": 261093
+      },
+      {
+        "ratingKey": "324377",
+        "key": "/library/metadata/324377",
+        "type": "track",
+        "title": "Kick Stones (The Boys)",
+        "librarySectionTitle": "Musique",
+        "librarySectionID": 8,
+        "grandparentTitle": "Westside Cowboy",
+        "parentTitle": "It Goes On",
+        "parentYear": 2026,
+        "parentThumb": "/library/metadata/324376/thumb/1790993643",
+        "duration": 236167
+      }
+    ]
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "MediaContainer": {
+    "size": 1,
+    "Metadata": [
+      {
+        "ratingKey": "324581",
+        "key": "/playlists/324581/items",
+        "type": "playlist",
+        "title": "L'amoureuse",
+        "smart": false,
+        "playlistType": "audio",
+        "duration": 7344000,
+        "leafCount": 29
+      }
+    ]
+  }
+}

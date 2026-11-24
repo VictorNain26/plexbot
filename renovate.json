@@ -1,0 +1,20 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:best-practices", ":semanticCommits"],
+  "timezone": "Europe/Paris",
+  "minimumReleaseAge": "14 days",
+  "rangeStrategy": "pin",
+  "packageRules": [
+    {
+      "description": "Voice and Discord libraries: reviewed by hand, Discord changes its voice protocol (DAVE).",
+      "matchPackageNames": ["discord.js", "@discordjs/voice", "@discordjs/opus"],
+      "automerge": false
+    },
+    {
+      "description": "Dev tools, minor and patch: merged once CI passes.",
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true
+    }
+  ]
+}

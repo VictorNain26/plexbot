@@ -1,0 +1,82 @@
+{
+  "MediaContainer": {
+    "size": 17,
+    "Hub": [
+      {
+        "title": "Albums",
+        "type": "album",
+        "size": 1,
+        "Metadata": [
+          {
+            "librarySectionTitle": "Musique second wave",
+            "ratingKey": "308202",
+            "key": "/library/metadata/308202/children",
+            "type": "album",
+            "title": "Sleeping With Ghosts",
+            "librarySectionID": 9,
+            "parentTitle": "Placebo",
+            "year": 2003,
+            "thumb": "/library/metadata/308202/thumb/1784177800",
+            "parentThumb": "/library/metadata/308051/thumb/1794455742"
+          }
+        ]
+      },
+      {
+        "title": "Tracks",
+        "type": "track",
+        "size": 2,
+        "Metadata": [
+          {
+            "librarySectionTitle": "Musique",
+            "ratingKey": "187670",
+            "key": "/library/metadata/187670",
+            "type": "track",
+            "title": "Sleeping In",
+            "librarySectionID": 8,
+            "grandparentTitle": "The Postal Service",
+            "parentTitle": "Give Up",
+            "parentYear": 2003,
+            "thumb": "/library/metadata/187667/thumb/1784341892",
+            "parentThumb": "/library/metadata/187667/thumb/1784341892",
+            "duration": 261093,
+            "Media": [
+              {
+                "duration": 261093,
+                "Part": [
+                  {
+                    "key": "/library/parts/170566/1769175385/file.flac",
+                    "duration": 261093,
+                    "size": 30002894
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "librarySectionTitle": "Musique second wave",
+            "ratingKey": "299013",
+            "key": "/library/metadata/299013",
+            "type": "track",
+            "title": "Sleeping Village",
+            "librarySectionID": 9,
+            "grandparentTitle": "Black Sabbath",
+            "parentTitle": "Black Sabbath",
+            "parentYear": 1970,
+            "thumb": "/library/metadata/299007/thumb/1784177361",
+            "parentThumb": "/library/metadata/299007/thumb/1784177361",
+            "duration": 226351,
+            "Media": [
+              {
+                "duration": 226351,
+                "Part": [
+                  { "key": "/library/parts/273057/1294325734/file.mp3", "duration": 226351, "size": 11624239 }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      { "title": "Shows", "type": "show", "size": 0 }
+    ]
+  }
+}
