@@ -1,0 +1,7 @@
+dist
+coverage
+reports
+.stryker-tmp
+package-lock.json
+.claude
+.mcp.json

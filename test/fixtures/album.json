@@ -1,0 +1,38 @@
+{
+  "MediaContainer": {
+    "size": 2,
+    "grandparentTitle": "Placebo",
+    "key": "308202",
+    "librarySectionID": 9,
+    "librarySectionTitle": "Musique second wave",
+    "parentTitle": "Sleeping With Ghosts",
+    "parentYear": 2003,
+    "Metadata": [
+      {
+        "ratingKey": "308203",
+        "key": "/library/metadata/308203",
+        "type": "track",
+        "title": "Bulletproof Cupid",
+        "grandparentTitle": "Placebo",
+        "parentTitle": "Sleeping With Ghosts",
+        "parentYear": 2003,
+        "thumb": "/library/metadata/308202/thumb/1784177800",
+        "parentThumb": "/library/metadata/308202/thumb/1784177800",
+        "duration": 142576,
+        "Media": [{ "duration": 142576, "Part": [{ "key": "/library/parts/281535/1244538658/file.mp3" }] }]
+      },
+      {
+        "ratingKey": "308204",
+        "key": "/library/metadata/308204",
+        "type": "track",
+        "title": "English Summer Rain",
+        "grandparentTitle": "Placebo",
+        "parentTitle": "Sleeping With Ghosts",
+        "parentYear": 2003,
+        "parentThumb": "/library/metadata/308202/thumb/1784177800",
+        "duration": 241528,
+        "Media": [{ "duration": 241528, "Part": [{ "key": "/library/parts/281536/1244538658/file.mp3" }] }]
+      }
+    ]
+  }
+}

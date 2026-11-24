@@ -1,0 +1,11 @@
+{
+  "MediaContainer": {
+    "size": 4,
+    "Directory": [
+      { "key": "4", "type": "movie", "title": "Films" },
+      { "key": "5", "type": "show", "title": "Séries TV" },
+      { "key": "8", "type": "artist", "title": "Musique" },
+      { "key": "9", "type": "artist", "title": "Musique second wave" }
+    ]
+  }
+}

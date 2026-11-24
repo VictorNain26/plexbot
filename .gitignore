@@ -1,0 +1,9 @@
+node_modules/
+dist/
+coverage/
+reports/
+.stryker-tmp/
+# Secrets and runtime state on the server, never committed.
+secrets/
+data/
+.env
