@@ -64,6 +64,8 @@ export class GuildSession {
   #ffmpeg: { process: Ffmpeg; stderr: () => string } | undefined;
   #offsetMs = 0;
   #volume: number;
+  /** The voice channel's bitrate: ffmpeg encodes Opus at it (capped at 128 kb/s, stream.ts). */
+  #bitrate: number | undefined;
   #card: Message | undefined;
   #covers = new Map<string, Cover>();
   #timers: NodeJS.Timeout[] = [];
@@ -87,6 +89,14 @@ export class GuildSession {
     this.#player.on(AudioPlayerStatus.Idle, () => void this.#onIdle());
     this.#player.on(AudioPlayerStatus.Playing, () => {
       if (this.#wantPaused) this.#player.pause();
+    });
+    // A packet not ready when the 20 ms send timer fires goes out as silence: an audible gap
+    // (@discordjs/voice AudioPlayer). Each stream's count is logged when it ends.
+    this.#player.on('stateChange', (before, after) => {
+      if (before.status === AudioPlayerStatus.Playing && after.status !== AudioPlayerStatus.Playing) {
+        const missed = before.missedFrames;
+        if (missed > 0) this.#d.log.warn({ missedFrames: missed }, 'frames went out as silence');
+      }
     });
     this.#player.on('error', (err) => {
       this.#d.log.warn({ err: err.message, track: this.queue.current?.track.id }, 'audio player error');
@@ -123,6 +133,7 @@ export class GuildSession {
   /** Joins (or moves to) a voice channel and waits until the connection is ready. */
   async join(channel: VoiceBasedChannel, textChannel: SendableChannels): Promise<void> {
     this.#textChannel = textChannel;
+    this.#bitrate = channel.bitrate;
     const current = this.#connection;
     if (
       current?.joinConfig.channelId === channel.id &&
@@ -223,8 +234,9 @@ export class GuildSession {
 
   async setVolume(percent: number): Promise<void> {
     this.#volume = Math.min(Math.max(Math.round(percent), 0), 150);
-    this.#resource?.volume?.setVolume(this.#volume / 100);
-    await this.#refreshCard();
+    // ffmpeg applies the volume: it restarts at the same position with the new one.
+    if (this.queue.current && this.#resource) await this.#play(this.positionMs, { keepCard: true });
+    else await this.#refreshCard();
     this.save();
   }
 
@@ -374,7 +386,7 @@ export class GuildSession {
   }
 
   /** Streams the current entry from `seekMs`, replacing whatever was playing. */
-  async #play(seekMs = 0): Promise<void> {
+  async #play(seekMs = 0, options: { keepCard?: boolean } = {}): Promise<void> {
     const entry = this.queue.current;
     if (!entry) return this.#playOrFinish();
     const generation = ++this.#playGeneration;
@@ -394,16 +406,14 @@ export class GuildSession {
     }
 
     const previous = this.#ffmpeg;
-    const ffmpeg = startFfmpeg(playable, seekMs);
+    const ffmpeg = startFfmpeg(playable, { seekMs, bitrate: this.#bitrate, volume: this.#volume });
     this.#ffmpeg = ffmpeg;
     ffmpeg.process.on('error', (err) => {
       this.#d.log.error({ err: err.message }, 'cannot start ffmpeg');
     });
     const resource = createAudioResource(ffmpeg.process.stdout, {
-      inputType: StreamType.Raw,
-      inlineVolume: true,
+      inputType: StreamType.OggOpus,
     });
-    resource.volume?.setVolume(this.#volume / 100);
 
     // play() replaces the current resource without an Idle event (AudioPlayer.play).
     this.#resource = resource;
@@ -416,7 +426,7 @@ export class GuildSession {
     await this.#reportTimeline('playing');
     // A new track gets a new card at the bottom; a seek updates it. After a restart, there is
     // no card yet: one is posted.
-    if (seekMs === 0 || !this.#card) await this.#sendCard();
+    if ((seekMs === 0 && options.keepCard !== true) || !this.#card) await this.#sendCard();
     else await this.#refreshCard();
     this.save();
   }

@@ -58,24 +58,51 @@ describe('ffmpegArgs', () => {
     headers: { 'X-Plex-Token': 'tok' },
     gainDb: -10.36,
   };
+  const value = (args: string[], flag: string) => args[args.indexOf(flag) + 1];
 
-  it('reads the Plex URL with the token in a header and writes 48 kHz stereo PCM', () => {
+  it('reads the Plex URL with the token in a header', () => {
     const args = ffmpegArgs(playable);
-    expect(args.join(' ')).not.toContain('tok@');
     expect(args).not.toContain('http://plex:32400/library/parts/1/file.flac?X-Plex-Token=tok');
-    expect(args[args.indexOf('-headers') + 1]).toBe('X-Plex-Token: tok\r\n');
-    expect(args.slice(-7)).toEqual(['-f', 's16le', '-ar', '48000', '-ac', '2', 'pipe:1']);
+    expect(value(args, '-headers')).toBe('X-Plex-Token: tok\r\n');
     expect(args.indexOf('-ss')).toBe(-1);
   });
 
-  it('applies the gain, clamped, and seeks before the input', () => {
-    const args = ffmpegArgs({ ...playable, gainDb: -40 }, 61_500);
-    expect(args[args.indexOf('-af') + 1]).toMatch(/^volume=-20\.00dB,/);
-    expect(args.indexOf('-ss')).toBeLessThan(args.indexOf('-i'));
-    expect(args[args.indexOf('-ss') + 1]).toBe('61.500');
+  it('encodes Opus music in ffmpeg, in Ogg, at the given bitrate', () => {
+    const args = ffmpegArgs(playable, { bitrate: 96_000 });
+    expect(value(args, '-c:a')).toBe('libopus');
+    expect(value(args, '-b:a')).toBe('96000');
+    expect(value(args, '-vbr')).toBe('on');
+    expect(value(args, '-application')).toBe('audio');
+    expect(value(args, '-frame_duration')).toBe('20');
+    expect(value(args, '-compression_level')).toBe('10');
+    expect(args.slice(-7)).toEqual(['-ar', '48000', '-ac', '2', '-f', 'ogg', 'pipe:1']);
   });
 
-  it('adds no filter without a measured gain', () => {
-    expect(ffmpegArgs({ ...playable, gainDb: undefined })).not.toContain('-af');
+  it('keeps the bitrate between Discord’s minimum and the transparent 128 kb/s', () => {
+    expect(value(ffmpegArgs(playable, { bitrate: 384_000 }), '-b:a')).toBe('128000');
+    expect(value(ffmpegArgs(playable, { bitrate: 1_000 }), '-b:a')).toBe('8000');
+    expect(value(ffmpegArgs(playable), '-b:a')).toBe('64000');
+  });
+
+  it('adds the volume to the Plex gain, without a limiter when the total is a cut', () => {
+    expect(value(ffmpegArgs(playable, { volume: 100 }), '-af')).toBe('volume=-10.36dB');
+    expect(value(ffmpegArgs(playable, { volume: 50 }), '-af')).toBe('volume=-16.38dB');
+  });
+
+  it('limits peaks only when the total gain is a boost', () => {
+    const af = value(ffmpegArgs({ ...playable, gainDb: 4 }, { volume: 100 }), '-af');
+    expect(af).toBe('volume=4.00dB,alimiter=limit=1:level=disabled');
+  });
+
+  it('mutes at volume 0, clamps the Plex gain, and needs no filter at a neutral setting', () => {
+    expect(value(ffmpegArgs(playable, { volume: 0 }), '-af')).toBe('volume=0');
+    expect(value(ffmpegArgs({ ...playable, gainDb: -40 }), '-af')).toBe('volume=-20.00dB');
+    expect(ffmpegArgs({ ...playable, gainDb: undefined }, { volume: 100 })).not.toContain('-af');
+  });
+
+  it('seeks before the input', () => {
+    const args = ffmpegArgs(playable, { seekMs: 61_500 });
+    expect(args.indexOf('-ss')).toBeLessThan(args.indexOf('-i'));
+    expect(value(args, '-ss')).toBe('61.500');
   });
 });

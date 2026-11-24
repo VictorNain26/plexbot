@@ -12,7 +12,7 @@ const envSchema = z.object({
   PLEX_CLIENT_ID: z.string().min(1).default('plexbot'),
   DATA_DIR: z.string().default('/data'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
-  DEFAULT_VOLUME: z.coerce.number().int().min(0).max(150).default(80),
+  DEFAULT_VOLUME: z.coerce.number().int().min(0).max(150).default(100),
   IDLE_TIMEOUT_MS: z.coerce.number().int().min(10_000).default(300_000),
 });
 

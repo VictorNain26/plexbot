@@ -161,7 +161,7 @@ describe('loadConfig', () => {
     const c = loadConfig(env);
     expect(c.discordToken).toBe('discord-secret');
     expect(c.plex.token).toBe('plex-secret');
-    expect(c.defaultVolume).toBe(80);
+    expect(c.defaultVolume).toBe(100);
   });
 
   it('names a wrong setting without printing any secret', () => {
