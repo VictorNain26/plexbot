@@ -4,11 +4,16 @@ import {
   ButtonStyle,
   ContainerBuilder,
   MessageFlags,
+  ModalBuilder,
   SectionBuilder,
   SeparatorSpacingSize,
+  StringSelectMenuBuilder,
+  StringSelectMenuOptionBuilder,
   TextDisplayBuilder,
+  TextInputStyle,
   ThumbnailBuilder,
 } from 'discord.js';
+import { type Choice, truncate } from '../plex/mapping.js';
 import type { LoopMode, QueueEntry } from '../types.js';
 import { escapeMarkdown, formatDuration, progressBar } from './format.js';
 
@@ -24,7 +29,14 @@ export const Buttons = {
   loop: 'pb:loop',
   stop: 'pb:stop',
   queue: 'pb:queue',
+  panelSearch: 'pb:panel-search',
+  panelPlaylists: 'pb:panel-playlists',
+  panelRandom: 'pb:panel-random',
 } as const;
+/** Select menus: jump to an upcoming entry, pick a search result or a playlist. */
+export const Selects = { jump: 'pb:jump', pick: 'pb:pick' } as const;
+export const SEARCH_MODAL = 'pb:search-modal';
+export const SEARCH_FIELD = 'query';
 export const QUEUE_PAGE_PREFIX = 'pb:queue-page:';
 
 export interface NowPlayingView {
@@ -82,15 +94,6 @@ export function nowPlayingCard(v: NowPlayingView) {
         ].join('\n'),
   );
 
-  const section = new SectionBuilder().addTextDisplayComponents(header);
-  if (v.hasCover) {
-    section.setThumbnailAccessory(
-      new ThumbnailBuilder()
-        .setURL(`attachment://${COVER_NAME}`)
-        .setDescription(`Pochette de ${t.album || t.title}`),
-    );
-  }
-
   const controls = new ActionRowBuilder<ButtonBuilder>().addComponents(
     button(Buttons.previous, '⏮️', 'Précédent'),
     button(Buttons.toggle, v.paused ? '▶️' : '⏸️', v.paused ? 'Reprendre' : 'Pause', ButtonStyle.Primary),
@@ -107,15 +110,38 @@ export function nowPlayingCard(v: NowPlayingView) {
     button(Buttons.queue, '📜', 'File d’attente'),
     button(Buttons.stop, '⏹️', 'Arrêter', ButtonStyle.Danger),
   );
+  const rows: ActionRowBuilder<ButtonBuilder | StringSelectMenuBuilder>[] = [controls, secondary];
+  const jump = jumpMenu(v.upcoming);
+  if (jump) rows.unshift(jump);
 
-  const container = new ContainerBuilder()
-    .setAccentColor(v.accentColor ?? BRAND_COLOR)
-    .addSectionComponents(section)
+  const container = new ContainerBuilder().setAccentColor(v.accentColor ?? BRAND_COLOR);
+  // A section needs an accessory (Components V2): with no cover, the header stands alone.
+  if (v.hasCover) {
+    container.addSectionComponents(
+      new SectionBuilder()
+        .addTextDisplayComponents(header)
+        .setThumbnailAccessory(
+          new ThumbnailBuilder()
+            .setURL(`attachment://${COVER_NAME}`)
+            .setDescription(`Pochette de ${t.album || t.title}`),
+        ),
+    );
+  } else {
+    container.addTextDisplayComponents(header);
+  }
+  container
     .addTextDisplayComponents(progress)
     .addSeparatorComponents((s) => s.setDivider(true).setSpacing(SeparatorSpacingSize.Small))
     .addTextDisplayComponents(upcoming)
-    .addActionRowComponents(controls, secondary);
+    .addActionRowComponents(...rows);
+  return { components: [container], flags: MessageFlags.IsComponentsV2 as const };
+}
 
+/** A short notice, for a reply that replaces a Components V2 message (a picker). */
+export function noticeCard(text: string) {
+  const container = new ContainerBuilder()
+    .setAccentColor(BRAND_COLOR)
+    .addTextDisplayComponents((t) => t.setContent(text));
   return { components: [container], flags: MessageFlags.IsComponentsV2 as const };
 }
 
@@ -162,6 +188,93 @@ export function queueCard(current: QueueEntry | undefined, upcoming: readonly Qu
         button(`${QUEUE_PAGE_PREFIX}${p + 1}`, '▶️', 'Suivante', ButtonStyle.Secondary, p >= pages - 1),
       ),
     );
+  }
+  return { components: [container], flags: MessageFlags.IsComponentsV2 as const };
+}
+
+/** Discord shows at most 25 options in a select menu, each label and value at most 100 characters. */
+export const SELECT_MAX = 25;
+
+/** « Aller à… »: the next entries, by their uid so a reordered queue can't jump to the wrong one. */
+function jumpMenu(upcoming: readonly QueueEntry[]) {
+  if (upcoming.length === 0) return undefined;
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId(Selects.jump)
+    .setPlaceholder('Aller à…')
+    .addOptions(
+      upcoming.slice(0, SELECT_MAX).map((e, i) => {
+        const option = new StringSelectMenuOptionBuilder()
+          .setLabel(truncate(`${i + 1}. ${e.track.title}`, 100))
+          .setValue(e.uid);
+        // A description must not be empty (discord.js builders).
+        if (e.track.artist) option.setDescription(truncate(e.track.artist, 100));
+        return option;
+      }),
+    );
+  return new ActionRowBuilder<ButtonBuilder | StringSelectMenuBuilder>().addComponents(menu);
+}
+
+/** The jukebox panel: everything without typing a command. */
+export function panelCard() {
+  const container = new ContainerBuilder()
+    .setAccentColor(BRAND_COLOR)
+    .addTextDisplayComponents((t) =>
+      t.setContent(
+        '### 🎶 Jukebox Plex\nRejoins un salon vocal, puis choisis : chercher une piste, un album ou une playlist, ' +
+          'lancer une de tes playlists, ou laisser faire le hasard.',
+      ),
+    )
+    .addActionRowComponents(
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        button(Buttons.panelSearch, '🔍', 'Chercher', ButtonStyle.Primary),
+        button(Buttons.panelPlaylists, '📜', 'Playlists'),
+        button(Buttons.panelRandom, '🎲', 'Au hasard'),
+      ),
+    );
+  return { components: [container], flags: MessageFlags.IsComponentsV2 as const };
+}
+
+/** The search box the « Chercher » button opens. */
+export function searchModal() {
+  return new ModalBuilder()
+    .setCustomId(SEARCH_MODAL)
+    .setTitle('Chercher dans Plex')
+    .addLabelComponents((l) =>
+      l
+        .setLabel('Titre, album ou playlist')
+        .setTextInputComponent((t) =>
+          t
+            .setCustomId(SEARCH_FIELD)
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+            .setMinLength(2)
+            .setMaxLength(100),
+        ),
+    );
+}
+
+/** A menu of choices (search results, playlists) that plays the one picked. */
+export function pickerCard(title: string, choices: readonly Choice[]) {
+  const container = new ContainerBuilder().setAccentColor(BRAND_COLOR);
+  if (choices.length === 0) {
+    container.addTextDisplayComponents((t) => t.setContent(`### ${title}\n-# Rien trouvé.`));
+  } else {
+    container
+      .addTextDisplayComponents((t) => t.setContent(`### ${title}`))
+      .addActionRowComponents(
+        new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId(Selects.pick)
+            .setPlaceholder('Choisis ce qui doit jouer')
+            .addOptions(
+              choices
+                .slice(0, SELECT_MAX)
+                .map((c) =>
+                  new StringSelectMenuOptionBuilder().setLabel(truncate(c.name, 100)).setValue(c.value),
+                ),
+            ),
+        ),
+      );
   }
   return { components: [container], flags: MessageFlags.IsComponentsV2 as const };
 }

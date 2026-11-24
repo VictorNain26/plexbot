@@ -7,7 +7,10 @@ import {
   type GuildMember,
   type Interaction,
   MessageFlags,
+  type ModalSubmitInteraction,
   type SendableChannels,
+  type StringSelectMenuInteraction,
+  type VoiceBasedChannel,
 } from 'discord.js';
 import { GuildSession } from './audio/session.js';
 import type { Logger } from './log.js';
@@ -15,9 +18,20 @@ import type { Library, PlexClient } from './plex/client.js';
 import { type MediaRef, decodeRef, toChoices } from './plex/mapping.js';
 import { shuffled } from './queue/queue.js';
 import type { Store } from './store/store.js';
-import type { LoopMode } from './types.js';
-import { Buttons, QUEUE_PAGE_PREFIX, queueCard } from './ui/cards.js';
-import { parseDuration } from './ui/format.js';
+import type { LoopMode, Track } from './types.js';
+import {
+  Buttons,
+  QUEUE_PAGE_PREFIX,
+  SEARCH_FIELD,
+  SEARCH_MODAL,
+  Selects,
+  noticeCard,
+  panelCard,
+  pickerCard,
+  queueCard,
+  searchModal,
+} from './ui/cards.js';
+import { escapeMarkdown, parseDuration } from './ui/format.js';
 
 export interface BotDeps {
   readonly client: Client;
@@ -29,6 +43,16 @@ export interface BotDeps {
   readonly defaultVolume: number;
   readonly idleTimeoutMs: number;
 }
+
+/** Tracks the « Au hasard » button queues. */
+const RANDOM_COUNT = 20;
+
+/** Interactions that can start playback (they carry the member and their channel). */
+type Playing =
+  | ChatInputCommandInteraction<'cached'>
+  | ButtonInteraction<'cached'>
+  | StringSelectMenuInteraction<'cached'>
+  | AutocompleteInteraction<'cached'>;
 
 /** A message for the user who acted, shown only to them. */
 class UserError extends Error {}
@@ -77,6 +101,8 @@ export class Bot {
       if (i.isAutocomplete()) await this.#autocomplete(i);
       else if (i.isChatInputCommand()) await this.#command(i);
       else if (i.isButton()) await this.#button(i);
+      else if (i.isStringSelectMenu()) await this.#select(i);
+      else if (i.isModalSubmit()) await this.#modal(i);
     } catch (err) {
       const message =
         err instanceof UserError
@@ -85,8 +111,11 @@ export class Bot {
       if (!(err instanceof UserError)) this.#d.log.error({ err, interaction: i.id }, 'interaction failed');
       if (i.isRepliable()) {
         const reply = { content: `⚠️ ${message}`, flags: MessageFlags.Ephemeral } as const;
+        const deferredReply = i.isStringSelectMenu()
+          ? noticeCard(`⚠️ ${message}`)
+          : { content: `⚠️ ${message}` };
         await (
-          i.deferred ? i.editReply(`⚠️ ${message}`) : i.replied ? i.followUp(reply) : i.reply(reply)
+          i.deferred ? i.editReply(deferredReply) : i.replied ? i.followUp(reply) : i.reply(reply)
         ).catch(() => undefined);
       }
     }
@@ -107,6 +136,12 @@ export class Bot {
 
   async #command(i: ChatInputCommandInteraction<'cached'>): Promise<void> {
     if (i.commandName === 'play') return this.#play(i);
+    if (i.commandName === 'panneau') {
+      const channel = this.#textChannel(i);
+      await channel.send(panelCard());
+      await i.reply({ content: 'Panneau jukebox publié.', flags: MessageFlags.Ephemeral });
+      return;
+    }
 
     const s = this.#sessionFor(i.member, i.guild);
     if (i.commandName !== 'file') {
@@ -195,33 +230,55 @@ export class Bot {
   }
 
   async #play(i: ChatInputCommandInteraction<'cached'>): Promise<void> {
-    const channel = i.member.voice.channel;
-    if (!channel) throw new UserError('Rejoins d’abord un salon vocal.');
-    const current = this.#sessions.get(i.guildId);
-    if (
-      current?.voiceChannelId &&
-      current.voiceChannelId !== channel.id &&
-      this.#listeners(current, i.guild) > 0
-    ) {
-      throw new UserError('Je joue déjà dans un autre salon vocal.');
-    }
+    this.#voiceChannelOf(i.member, i.guild);
     await i.deferReply({ flags: MessageFlags.Ephemeral });
-
     const ref = await this.#resolve(
       i.options.getString('recherche', true),
       i.options.getString('bibliotheque'),
     );
-    let tracks = await this.#d.plex.tracks(ref);
-    if (tracks.length === 0) throw new UserError('Rien à jouer là-dedans.');
-    if (i.options.getBoolean('melanger') === true) tracks = shuffled(tracks);
+    await this.#start(i, await this.#d.plex.tracks(ref), {
+      next: i.options.getBoolean('ensuite') === true,
+      shuffle: i.options.getBoolean('melanger') === true,
+    });
+  }
 
+  /** The member's voice channel, when the bot may play there. */
+  #voiceChannelOf(member: GuildMember, guild: Guild): VoiceBasedChannel {
+    const channel = member.voice.channel;
+    if (!channel) throw new UserError('Rejoins d’abord un salon vocal.');
+    const current = this.#sessions.get(guild.id);
+    if (
+      current?.voiceChannelId &&
+      current.voiceChannelId !== channel.id &&
+      this.#listeners(current, guild) > 0
+    ) {
+      throw new UserError('Je joue déjà dans un autre salon vocal.');
+    }
+    return channel;
+  }
+
+  /**
+   * Joins the member's voice channel and queues `tracks`; the interaction was deferred (ephemeral)
+   * and gets the confirmation. Shared by /play, the panel and its menus.
+   */
+  async #start(
+    i: Exclude<Playing, AutocompleteInteraction>,
+    found: readonly Track[],
+    options: { next?: boolean; shuffle?: boolean } = {},
+  ): Promise<void> {
+    const channel = this.#voiceChannelOf(i.member, i.guild);
+    if (found.length === 0) throw new UserError('Rien à jouer là-dedans.');
+    const tracks = options.shuffle === true ? shuffled(found) : found;
+    const text = i.channel;
+    if (!text?.isSendable()) throw new UserError('Lance la musique depuis un salon où je peux écrire.');
     const s = this.session(i.guild);
-    await s.join(channel, this.#textChannel(i));
-    const next = i.options.getBoolean('ensuite') === true;
-    await s.enqueue(tracks, { id: i.user.id, name: i.member.displayName }, { next });
-
-    const what = tracks.length === 1 ? `**${tracks[0]?.title ?? ''}**` : `**${tracks.length} titres**`;
-    await i.editReply(`✅ ${what} ${next ? 'jouera ensuite' : 'ajouté à la file'}.`);
+    await s.join(channel, text);
+    await s.enqueue(tracks, { id: i.user.id, name: i.member.displayName }, { next: options.next === true });
+    const what =
+      tracks.length === 1 ? `**${escapeMarkdown(tracks[0]?.title ?? '')}**` : `**${tracks.length} titres**`;
+    const message = `✅ ${what} ${options.next === true ? 'jouera ensuite' : 'ajouté à la file'}.`;
+    // A picker is a Components V2 message: it can only be replaced by components, not by text.
+    await i.editReply(i.isStringSelectMenu() ? noticeCard(message) : { content: message });
   }
 
   /** The option value from the autocomplete, or, for typed text, the first search result. */
@@ -241,6 +298,25 @@ export class Bot {
       const page = Number(i.customId.slice(QUEUE_PAGE_PREFIX.length));
       await i.update(queueCard(s?.queue.current, s?.queue.upcoming ?? [], Number.isInteger(page) ? page : 0));
       return;
+    }
+    switch (i.customId) {
+      case Buttons.panelSearch:
+        await i.showModal(searchModal());
+        return;
+      case Buttons.panelPlaylists: {
+        await i.deferReply({ flags: MessageFlags.Ephemeral });
+        const playlists = toChoices(await this.#d.plex.audioPlaylists());
+        await i.editReply({
+          ...pickerCard('📜 Tes playlists', playlists),
+          flags: MessageFlags.IsComponentsV2,
+        });
+        return;
+      }
+      case Buttons.panelRandom:
+        this.#voiceChannelOf(i.member, i.guild);
+        await i.deferReply({ flags: MessageFlags.Ephemeral });
+        await this.#start(i, await this.#d.plex.randomTracks(RANDOM_COUNT));
+        return;
     }
     const s = this.#sessionFor(i.member, i.guild);
     switch (i.customId) {
@@ -273,6 +349,38 @@ export class Bot {
       default:
         throw new UserError('Ce bouton n’est plus valable.');
     }
+  }
+
+  async #select(i: StringSelectMenuInteraction<'cached'>): Promise<void> {
+    const [value] = i.values;
+    if (value === undefined) return;
+    if (i.customId === Selects.jump) {
+      const s = this.#sessionFor(i.member, i.guild);
+      await i.deferUpdate();
+      await s.jumpTo(value);
+      return;
+    }
+    if (i.customId === Selects.pick) {
+      const ref = decodeRef(value);
+      if (!ref) throw new UserError('Ce choix n’est plus valable.');
+      this.#voiceChannelOf(i.member, i.guild);
+      // The menu is in an ephemeral message: its own reply becomes the confirmation.
+      await i.deferUpdate();
+      await this.#start(i, await this.#d.plex.tracks(ref));
+      return;
+    }
+    throw new UserError('Ce menu n’est plus valable.');
+  }
+
+  async #modal(i: ModalSubmitInteraction<'cached'>): Promise<void> {
+    if (i.customId !== SEARCH_MODAL) throw new UserError('Cette fenêtre n’est plus valable.');
+    const query = i.fields.getTextInputValue(SEARCH_FIELD).trim();
+    await i.deferReply({ flags: MessageFlags.Ephemeral });
+    const choices = toChoices(await this.#d.plex.search(query));
+    await i.editReply({
+      ...pickerCard(`🔍 « ${escapeMarkdown(query)} »`, choices),
+      flags: MessageFlags.IsComponentsV2,
+    });
   }
 
   /** The session a member may control: the bot plays, and they are in its voice channel. */

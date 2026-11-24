@@ -44,7 +44,8 @@ export function toTrack(m: Metadata): Track {
     id: m.ratingKey,
     title: m.title,
     // A compilation track names its own artist in originalTitle.
-    artist: m.originalTitle ?? m.grandparentTitle ?? 'Artiste inconnu',
+    // `||`, not `??`: Plex sends an empty string for an unknown artist too.
+    artist: m.originalTitle || m.grandparentTitle || 'Artiste inconnu',
     album: m.parentTitle ?? '',
     year: m.parentYear ?? m.year,
     durationMs: m.duration ?? 0,
@@ -100,16 +101,22 @@ export function toChoices(
   options: { sectionId?: number | undefined; limit?: number } = {},
 ): Choice[] {
   const order: Record<string, number> = { track: 0, album: 1, playlist: 2 };
-  return items
-    .filter(
-      (m) =>
-        options.sectionId === undefined || m.type === 'playlist' || m.librarySectionID === options.sectionId,
-    )
-    .filter((m) => m.type in order)
-    .sort((a, b) => (order[a.type] ?? 9) - (order[b.type] ?? 9))
-    .map(toChoice)
-    .filter((c): c is Choice => c !== undefined)
-    .slice(0, options.limit ?? 25);
+  return (
+    items
+      .filter(
+        (m) =>
+          options.sectionId === undefined ||
+          m.type === 'playlist' ||
+          m.librarySectionID === options.sectionId,
+      )
+      .filter((m) => m.type in order)
+      .sort((a, b) => (order[a.type] ?? 9) - (order[b.type] ?? 9))
+      .map(toChoice)
+      .filter((c): c is Choice => c !== undefined)
+      // Plex can return one item in two hubs; a select menu refuses duplicate values.
+      .filter((c, i, all) => all.findIndex((o) => o.value === c.value) === i)
+      .slice(0, options.limit ?? 25)
+  );
 }
 
 /** Loudness gain Plex measured for a track (dB), album gain first so an album keeps its dynamics. */

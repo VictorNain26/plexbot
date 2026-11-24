@@ -30,6 +30,9 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      # The audio integration test runs the real ffmpeg (libopus), as the image does.
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - run: npm ci
       - run: npm run format:check
       - run: npm run lint
@@ -58,14 +61,14 @@ jobs:
           build-args: GIT_SHA=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      # The built image has its runtime: Node, ffmpeg with Opus, and the voice libraries.
+      # The built image has its runtime: Node, ffmpeg with libopus (it encodes the Opus), DAVE.
       - name: Image smoke test
         run: |
           docker run --rm --entrypoint ffmpeg plexbot:ci -hide_banner -encoders | grep -q libopus
           docker run --rm --entrypoint node plexbot:ci -e "
             const r = require('@discordjs/voice').generateDependencyReport();
             console.log(r);
-            for (const s of ['@discordjs/opus: 0.', '@snazzah/davey: 0.', 'aes-256-gcm: yes']) if (!r.includes(s)) process.exit(1);
+            for (const s of ['@snazzah/davey: 0.', 'aes-256-gcm: yes', 'libopus: yes']) if (!r.includes(s)) process.exit(1);
           "
 
   # Published from main once checked (or on demand, see workflow_dispatch): the server pulls
