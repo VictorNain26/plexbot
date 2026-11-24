@@ -14,6 +14,8 @@ export interface SavedSession {
   readonly volume: number;
   readonly positionMs: number;
   readonly paused: boolean;
+  /** The « now playing » card of the session: deleted on restore, a new one replaces it. */
+  readonly cardMessageId?: string | undefined;
 }
 
 const trackSchema = z.object({
@@ -42,6 +44,7 @@ const savedSchema = z.object({
   volume: z.number(),
   positionMs: z.number(),
   paused: z.boolean(),
+  cardMessageId: z.string().optional(),
 });
 
 /** One row per guild in a SQLite file (node:sqlite, built into Node). */
