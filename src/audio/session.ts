@@ -16,6 +16,7 @@ import {
   AttachmentBuilder,
   type Guild,
   type Message,
+  MessageFlags,
   type SendableChannels,
   type VoiceBasedChannel,
 } from 'discord.js';
@@ -537,7 +538,10 @@ export class GuildSession {
     return { card, cover };
   }
 
-  /** A new card for a new track: the old one is deleted so the card stays at the bottom. */
+  /**
+   * A new card for a new track: the old one is deleted so the card stays at the bottom. It is
+   * sent silent (SUPPRESS_NOTIFICATIONS, Discord message flags): no sound at each track.
+   */
   async #sendCard(): Promise<void> {
     const view = await this.#view();
     if (!view || !this.#textChannel) return;
@@ -545,6 +549,7 @@ export class GuildSession {
     try {
       this.#card = await this.#textChannel.send({
         ...view.card,
+        flags: view.card.flags | MessageFlags.SuppressNotifications,
         files: view.cover.jpeg ? [new AttachmentBuilder(view.cover.jpeg, { name: COVER_NAME })] : [],
       });
     } catch (err) {
@@ -580,6 +585,8 @@ export class GuildSession {
   }
 
   async #say(text: string): Promise<void> {
-    await this.#textChannel?.send({ content: text, allowedMentions: { parse: [] } }).catch(() => undefined);
+    await this.#textChannel
+      ?.send({ content: text, allowedMentions: { parse: [] }, flags: MessageFlags.SuppressNotifications })
+      .catch(() => undefined);
   }
 }
